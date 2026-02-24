@@ -213,6 +213,15 @@ body {
   text-overflow: ellipsis;
   flex: 1;
 }
+.grid-post-status {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 5px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
 @media (min-width: 768px) {
   .calendar-grid { display: block; }
@@ -1584,7 +1593,7 @@ MONTHS.forEach((month, mi) => {
             <span class="post-row-dot" style="background:${cfg.dot}"></span>
             <span class="post-row-type" style="background:${cfg.bg};color:${cfg.dot}">${cfg.label}</span>
             <span class="post-row-title">${esc(post.title)}</span>
-            <span class="post-row-status ${statusClass(post.status)}">${post.status||'—'}</span>
+            <span class="post-row-status ${statusClass(post.status)}" data-status-badge="true">${post.status||'—'}</span>
             <span class="chevron">▾</span>
           `;
           const detail = document.createElement('div');
@@ -1642,9 +1651,21 @@ function makeGridPill(post, year, month, day){
   const pill = document.createElement('div');
   pill.className = 'grid-post';
   pill.style.background = cfg.bg;
-  pill.innerHTML = `<span class="grid-post-dot" style="background:${cfg.dot}"></span><span class="grid-post-label" style="color:${cfg.dot}">${esc(post.title)}</span>`;
+  const statusBadge = gridStatusBadge(post.status);
+  pill.innerHTML = `<span class="grid-post-dot" style="background:${cfg.dot}"></span><span class="grid-post-label" style="color:${cfg.dot}">${esc(post.title)}</span>${statusBadge}`;
   pill.onclick = () => openModal(post, year, month, day, pill);
   return pill;
+}
+
+function gridStatusBadge(status){
+  const map = {
+    'Published':   { bg:'#D4EDDA', color:'#1e6b35' },
+    'Approved':    { bg:'#D1ECF1', color:'#0c5460' },
+    'In Progress': { bg:'#FFF3CD', color:'#856404' },
+    'Not Started': { bg:'#F8D7DA', color:'#721c24' },
+  };
+  const s = map[status] || { bg:'#EEEEEE', color:'#666' };
+  return `<span class="grid-post-status" style="background:${s.bg};color:${s.color}">${status||'—'}</span>`;
 }
 
 // ── Update day card style after add/delete ────────────────
@@ -1781,7 +1802,28 @@ function buildDetailFields(post, cfg, onDelete){
     if(s===post.status) o.selected=true;
     sel.appendChild(o);
   });
-  sel.onchange = ()=>{ post.status = sel.value; scheduleSave(); };
+  sel.onchange = ()=>{
+    post.status = sel.value;
+    // Update badge in mobile row
+    const detailPanel = sel.closest('.post-detail-inline');
+    if(detailPanel){
+      const badge = detailPanel.previousElementSibling &&
+                    detailPanel.previousElementSibling.querySelector('[data-status-badge]');
+      if(badge){
+        badge.className = 'post-row-status ' + statusClass(sel.value);
+        badge.textContent = sel.value;
+      }
+    }
+    // Update badge in desktop grid pill (modal is open, pill is in the grid)
+    document.querySelectorAll('.grid-post').forEach(pill => {
+      const label = pill.querySelector('.grid-post-label');
+      if(label && label.textContent === post.title){
+        const existing = pill.querySelector('.grid-post-status');
+        if(existing) existing.outerHTML = gridStatusBadge(sel.value);
+      }
+    });
+    scheduleSave();
+  };
   sel.onclick = e=>e.stopPropagation();
   sec1.appendChild(lbl1); sec1.appendChild(sel);
   wrap.appendChild(sec1);
@@ -2182,7 +2224,8 @@ async function writeToSheet(rows){
 
 // Debounced auto-save
 function scheduleSave(){
-  if(!gToken) return;
+  if(!gToken){ console.log('scheduleSave: no token, skipping'); return; }
+  console.log('scheduleSave: queuing save, token present');
   clearTimeout(saveTimeout);
   setAuthState('syncing');
   saveTimeout = setTimeout(async () => {
@@ -2190,6 +2233,7 @@ function scheduleSave(){
       p.date, p.type, p.title, p.status||'', p.copy||'', p.image||'', p.notes||'',
       JSON.stringify((p.attachments||[]).map(a => ({ name: a.name, type: a.type, data: a.data })))
     ]);
+    console.log('scheduleSave: writing', rows.length, 'rows to sheet');
     await writeToSheet(rows);
     setAuthState('connected');
   }, 1500);
