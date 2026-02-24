@@ -2096,6 +2096,7 @@ async function getUserInfo(){
       headers: { Authorization: 'Bearer ' + gToken }
     });
     const u = await r.json();
+    localStorage.setItem('gHasSigned', '1');
     setAuthState('connected', u.email);
     await ensureSheet();
     await loadFromSheet();
@@ -2199,8 +2200,13 @@ const _origSchedule = scheduleSave;
 
 // Init on load
 checkOAuthCallback();
-if(gClientId){
-  // Show sign-in button ready
+// If this user has signed in before on this device, auto-reconnect silently
+if(gClientId && localStorage.getItem('gHasSigned')){
+  setTimeout(() => {
+    if(!gToken && !window.location.hash.includes('access_token')){
+      initiateOAuth();
+    }
+  }, 800);
 }
 
 // ═══════════════════════════════════════════════════════════
